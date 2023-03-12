@@ -1,0 +1,36 @@
+---
+- name: Verifica os últimos deployments do CodePipeline e exporta para CSV
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Obtém informações do CodePipeline
+      shell: aws codepipeline list-pipeline-executions --pipeline-name <NOME DO PIPELINE> --output json
+      register: pipeline_executions
+
+    - name: Filtra as informações do último deployment
+      set_fact:
+        latest_deployment: "{{ pipeline_executions.stdout | from_json | sort(attribute='startTime')[::-1][0] }}"
+
+    - name: Obtém informações do usuário que aplicou o deployment
+      shell: aws iam get-user --user-name {{ latest_deployment.lastUpdatedBy }}
+      register: user_info
+
+    - name: Cria arquivo CSV com as informações do deployment
+      csv_write:
+        path: /tmp/codepipeline_deployments.csv
+        headers:
+          - Nome do Pipeline
+          - ID do Pipeline
+          - Versão do Pipeline
+          - Data do Deployment
+          - Usuário que Aplicou o Deployment
+        lines:
+          - "{{ latest_deployment.pipelineExecutionDisplayName }}"
+          - "{{ latest_deployment.pipelineExecutionId }}"
+          - "{{ latest_deployment.pipelineVersion }}"
+          - "{{ latest_deployment.startTime }}"
+          - "{{ user_info.stdout | from_json | json_query('User.UserName') }}\""
+
+    - name: Exibe o conteúdo do arquivo CSV
+      command: cat /tmp/codepipeline_deployments.csv
